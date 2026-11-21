@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Người dùng · Chứng từ số{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Người dùng và vai trò</h1></div>
+<section class="card">
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Email</th><th>Họ tên</th><th>Vai trò</th><th>Bộ phận</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr>
+        <td>{{ u.email }}</td>
+        <td>{{ u.name }}</td>
+        <td>
+          <select name="role" form="user-{{ loop.index }}" aria-label="Vai trò của {{ u.email }}">
+            {% for key, label in ROLES.items() %}<option value="{{ key }}" {% if key == u.role %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </td>
+        <td>
+          <select name="department" form="user-{{ loop.index }}" aria-label="Bộ phận của {{ u.email }}">
+            {% for d in DEPARTMENTS %}<option {% if d == u.department %}selected{% endif %}>{{ d }}</option>{% endfor %}
+          </select>
+        </td>
+        <td>
+          <form id="user-{{ loop.index }}" method="post" action="{{ url_for('main.users') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="email" value="{{ u.email }}">
+            <input type="hidden" name="name" value="{{ u.name }}">
+            <button class="btn" type="submit">Lưu</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="card narrow">
+  <h2>Thêm người dùng</h2>
+  <form class="form" method="post" action="{{ url_for('main.users') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="row">
+      <label>Email <input type="email" name="email" required></label>
+      <label>Họ tên <input type="text" name="name" maxlength="80"></label>
+    </div>
+    <div class="row">
+      <label>Vai trò
+        <select name="role">{% for key, label in ROLES.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+      </label>
+      <label>Bộ phận
+        <select name="department">{% for d in DEPARTMENTS %}<option>{{ d }}</option>{% endfor %}</select>
+      </label>
+    </div>
+    <div class="actions"><button class="btn btn-primary" type="submit">Thêm</button></div>
+  </form>
+</section>
+{% endblock %}

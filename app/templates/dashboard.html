@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "_macros.html" import doc_table with context %}
+{% block title %}Tổng quan · Chứng từ số{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Tổng quan</h1>
+  <a class="btn btn-primary" href="{{ url_for('main.new_document') }}">Nộp chứng từ</a>
+</div>
+
+<section class="stats">
+  <a class="stat" href="{{ url_for('main.list_documents') }}"><span>Tất cả</span><strong>{{ total }}</strong></a>
+  {% for status, label in STATUS_LABELS.items() %}
+  <a class="stat stat-{{ status|lower }}" href="{{ url_for('main.list_documents', status=status) }}"><span>{{ label }}</span><strong>{{ counts[status] }}</strong></a>
+  {% endfor %}
+</section>
+
+{% if user.role in ('manager', 'accountant') %}
+<section class="card">
+  <h2>Đang chờ bạn duyệt <span class="pill">{{ todo|length }}</span></h2>
+  {{ doc_table(todo, "Không có chứng từ nào đang chờ bạn.") }}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Chứng từ bạn đã nộp</h2>
+  {{ doc_table(mine, "Bạn chưa nộp chứng từ nào.") }}
+</section>
+{% endblock %}

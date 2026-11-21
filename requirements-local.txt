@@ -1,0 +1,3 @@
+# Đủ để chạy thử và kiểm thử trên máy cá nhân (BACKEND=local), không cần thư viện Google Cloud
+Flask>=3.0,<4
+pytest>=8

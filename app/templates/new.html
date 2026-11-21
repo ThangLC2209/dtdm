@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Nộp chứng từ · Chứng từ số{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Nộp chứng từ</h1></div>
+<section class="card narrow">
+  <form class="form" method="post" action="{{ url_for('main.create_document') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Tiêu đề
+      <input type="text" name="title" value="{{ form.get('title', '') }}" required minlength="3" maxlength="150" placeholder="Ví dụ: Hóa đơn thuê văn phòng tháng 11">
+    </label>
+    <div class="row">
+      <label>Loại chứng từ
+        <select name="type" required>
+          <option value="">Chọn loại</option>
+          {% for key, label in DOC_TYPES.items() %}
+          <option value="{{ key }}" {% if form.get('type') == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Số tiền (đồng)
+        <input type="text" name="amount" value="{{ form.get('amount', '') }}" required inputmode="numeric" placeholder="15.000.000">
+      </label>
+    </div>
+    <label>Diễn giải
+      <textarea name="description" rows="3" maxlength="1000" placeholder="Nội dung, nhà cung cấp, kỳ thanh toán">{{ form.get('description', '') }}</textarea>
+    </label>
+    <label>Tệp chứng từ
+      <input type="file" name="file" required accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx">
+      <small class="muted">PDF, PNG, JPG, DOCX hoặc XLSX, tối đa 10 MB.</small>
+    </label>
+    <p class="hint">Bộ phận: <strong>{{ user.department }}</strong>. Chứng từ từ {{ threshold|money }} trở lên cần kế toán trưởng duyệt sau trưởng bộ phận.</p>
+    <div class="actions">
+      <a class="btn btn-ghost" href="{{ url_for('main.dashboard') }}">Hủy</a>
+      <button class="btn btn-primary" type="submit">Nộp chứng từ</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

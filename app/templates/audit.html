@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Nhật ký · Chứng từ số{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Nhật ký thao tác</h1></div>
+<section class="card">
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Thời điểm</th><th>Chứng từ</th><th>Người thực hiện</th><th>Thao tác</th><th>Trạng thái mới</th><th>Ý kiến</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td class="muted">{{ r.at|vntime }}</td>
+        <td><a class="code" href="{{ url_for('main.document_detail', doc_id=r.doc_id) }}">{{ r.code }}</a></td>
+        <td>{{ r.actor_name }}<small class="muted block">{{ ROLES[r.actor_role] }}</small></td>
+        <td>{{ ACTION_LABELS[r.action] }}</td>
+        <td>{{ STATUS_LABELS[r.to_status] }}</td>
+        <td>{{ r.comment }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">Chưa có thao tác nào.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Chọn tài khoản · Chứng từ số{% endblock %}
+{% block content %}
+<section class="login">
+  <h1>Chọn tài khoản để trình diễn</h1>
+  <p class="muted">Chế độ demo không dùng mật khẩu. Khi triển khai thật, người dùng đăng nhập bằng tài khoản Google qua Identity-Aware Proxy.</p>
+  <div class="user-grid">
+    {% for u in users %}
+    <form method="post" action="{{ url_for('main.login') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="email" value="{{ u.email }}">
+      <button class="user-card role-{{ u.role }}" type="submit">
+        <span class="avatar">{{ u.name.split(' ')[-1][0]|upper }}</span>
+        <span class="user-meta">
+          <strong>{{ u.name }}</strong>
+          <span>{{ ROLES[u.role] }}</span>
+          <small>{{ u.department }}</small>
+        </span>
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

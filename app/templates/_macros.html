@@ -1,0 +1,30 @@
+{% macro status_badge(status) %}
+<span class="status status-{{ status|lower }}">{{ STATUS_LABELS[status] }}</span>
+{% endmacro %}
+
+{% macro doc_table(docs, empty_text) %}
+{% if docs %}
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr><th>Số</th><th>Tiêu đề</th><th>Loại</th><th class="num">Số tiền</th><th>Người nộp</th><th>Trạng thái</th><th>Cập nhật</th></tr>
+  </thead>
+  <tbody>
+  {% for d in docs %}
+    <tr>
+      <td><a class="code" href="{{ url_for('main.document_detail', doc_id=d.id) }}">{{ d.code }}</a></td>
+      <td>{{ d.title }}</td>
+      <td>{{ DOC_TYPES[d.type] }}</td>
+      <td class="num">{{ d.amount|money }}</td>
+      <td>{{ d.submitter_name }}<small class="muted block">{{ d.department }}</small></td>
+      <td>{{ status_badge(d.status) }}</td>
+      <td class="muted">{{ d.updated_at|vntime }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="empty">{{ empty_text }}</p>
+{% endif %}
+{% endmacro %}

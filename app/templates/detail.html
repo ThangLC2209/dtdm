@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge with context %}
+{% block title %}{{ doc.code }} · Chứng từ số{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="crumb"><a href="{{ url_for('main.list_documents') }}">Chứng từ</a> / {{ doc.code }}</p>
+    <h1>{{ doc.title }}</h1>
+  </div>
+  {{ status_badge(doc.status) }}
+</div>
+
+<div class="grid-2">
+  <div>
+    <section class="card">
+      <h2>Thông tin</h2>
+      <dl class="facts">
+        <dt>Số chứng từ</dt><dd class="code">{{ doc.code }}</dd>
+        <dt>Loại</dt><dd>{{ DOC_TYPES[doc.type] }}</dd>
+        <dt>Số tiền</dt><dd><strong>{{ doc.amount|money }}</strong>{% if doc.amount >= threshold %} <span class="pill">cần duyệt 2 cấp</span>{% endif %}</dd>
+        <dt>Người nộp</dt><dd>{{ doc.submitter_name }} <span class="muted">({{ doc.submitter }})</span></dd>
+        <dt>Bộ phận</dt><dd>{{ doc.department }}</dd>
+        <dt>Ngày nộp</dt><dd>{{ doc.created_at|vntime }}</dd>
+        {% if doc.description %}<dt>Diễn giải</dt><dd>{{ doc.description }}</dd>{% endif %}
+      </dl>
+    </section>
+
+    <section class="card">
+      <h2>Tệp đính kèm</h2>
+      <ul class="files">
+        {% for v in doc.versions|reverse %}
+        <li>
+          <div>
+            <a href="{{ url_for('main.download', doc_id=doc.id, version=v.version) }}">{{ v.filename }}</a>
+            <small class="muted block">Phiên bản {{ v.version }} · {{ v.size|filesize }} · {{ v.uploaded_at|vntime }}</small>
+            <small class="muted block hash" title="Mã băm SHA-256 để đối chiếu tính toàn vẹn">SHA-256 {{ v.sha256[:16] }}…</small>
+          </div>
+          {% if loop.first %}<span class="pill">mới nhất</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    {% if can_decide %}
+    <section class="card card-action">
+      <h2>Quyết định của bạn</h2>
+      <form class="form" method="post" action="{{ url_for('main.decide', doc_id=doc.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label><span>Ý kiến <span class="muted">(bắt buộc khi từ chối)</span></span>
+          <textarea name="comment" rows="3" maxlength="500"></textarea>
+        </label>
+        <div class="actions">
+          <button class="btn btn-danger" type="submit" name="action" value="reject">Từ chối</button>
+          <button class="btn btn-primary" type="submit" name="action" value="approve">Duyệt</button>
+        </div>
+      </form>
+    </section>
+    {% endif %}
+
+    {% if can_resubmit %}
+    <section class="card card-action">
+      <h2>Nộp lại</h2>
+      <form class="form" method="post" action="{{ url_for('main.resubmit', doc_id=doc.id) }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Tệp đã chỉnh sửa
+          <input type="file" name="file" required accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx">
+        </label>
+        <label>Ghi chú
+          <textarea name="comment" rows="2" maxlength="500" placeholder="Nội dung đã sửa"></textarea>
+        </label>
+        <div class="actions"><button class="btn btn-primary" type="submit">Nộp lại</button></div>
+      </form>
+    </section>
+    {% endif %}
+  </div>
+
+  <aside class="card">
+    <h2>Lịch sử xử lý</h2>
+    <ol class="timeline">
+      {% for h in history %}
+      <li class="tl-{{ h.action }}">
+        <strong>{{ ACTION_LABELS[h.action] }}</strong>
+        <span>{{ h.actor_name }} · {{ ROLES[h.actor_role] }}</span>
+        <small class="muted">{{ h.at|vntime }} → {{ STATUS_LABELS[h.to_status] }}</small>
+        {% if h.comment %}<blockquote>{{ h.comment }}</blockquote>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </aside>
+</div>
+{% endblock %}

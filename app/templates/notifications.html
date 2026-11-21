@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Thông báo · Chứng từ số{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Thông báo</h1></div>
+<section class="card narrow">
+  {% if items %}
+  <ul class="notes">
+    {% for n in items %}
+    <li class="{% if not n.read %}unread{% endif %}">
+      <a href="{{ url_for('main.document_detail', doc_id=n.doc_id) }}">{{ n.message }}</a>
+      <small class="muted">{{ n.at|vntime }}</small>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">Chưa có thông báo.</p>
+  {% endif %}
+</section>
+{% endblock %}
