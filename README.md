@@ -1,143 +1,85 @@
-# Chứng từ số — demo hệ thống tiếp nhận, lưu trữ và phê duyệt chứng từ trên Google Cloud
+# Chứng từ số
 
-Ứng dụng web Python Flask chạy trên Cloud Run. Tệp chứng từ nằm trong Cloud Storage, siêu dữ liệu
-và nhật ký trong Firestore, sự kiện đi qua Pub/Sub tới một dịch vụ worker tạo thông báo.
+Ứng dụng web Flask tiếp nhận, lưu trữ và phê duyệt chứng từ. Giữ nguyên quy trình nghiệp vụ hiện có, hỗ trợ chạy local và có thể triển khai Azure với đăng nhập Microsoft Entra ID, Azure SQL, Blob Storage và Service Bus.
 
-## Cấu trúc thư mục
+## Chức năng
 
-```
-app/
-  workflow.py        Quy tắc nghiệp vụ: trạng thái, vai trò, ai được duyệt (hàm thuần)
-  routes.py          Trang web, kiểm tra tệp tải lên, endpoint nhận tin Pub/Sub
-  auth.py            Đăng nhập demo hoặc xác minh JWT của Identity-Aware Proxy
-  worker.py          Xử lý sự kiện -> thông báo (idempotent)
-  services.py        Chọn backend theo cấu hình, ghi log JSON
-  backends/local.py  Chạy trên máy: tệp JSON + thư mục tệp
-  backends/gcp.py    Firestore + Cloud Storage + Pub/Sub
-  templates/, static/
-tests/               33 ca kiểm thử tự động (pytest)
-scripts/seed_demo.py Tạo 6 chứng từ mẫu
-deploy/deploy.sh     Triển khai lên Google Cloud bằng gcloud
-deploy/cleanup.sh    Gỡ tài nguyên sau khi trình diễn
-Dockerfile
-```
+- Nộp chứng từ kèm tệp PDF, PNG, JPG, DOCX hoặc XLSX; lưu phiên bản và mã kiểm tra SHA-256.
+- Quy trình phê duyệt nhiều cấp theo vai trò và hạn mức; không ai tự duyệt chứng từ của mình.
+- Quản lý người dùng, vai trò, bộ phận, thông báo và nhật ký kiểm toán.
+- Phân quyền phía máy chủ cho từng vai trò và chứng từ.
 
-## Chạy trên máy cá nhân (không cần Google Cloud)
+## Công nghệ
+
+- Flask, Python 3.11+
+- Đăng nhập thật: Microsoft Entra ID (OIDC authorization-code)
+- Dữ liệu: Azure SQL; tệp riêng tư: Azure Blob Storage
+- Sự kiện/thông báo: Azure Service Bus
+- Container: Azure Container Apps
+- Azure SDK dùng managed identity; bí mật phải đặt bằng secret/Key Vault.
+
+## Chạy local
 
 Cần Python 3.11 trở lên.
 
-```bash
-python3 -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements-local.txt
-python scripts/seed_demo.py                              # tùy chọn: dữ liệu mẫu
-python main.py                                           # mở http://127.0.0.1:8080
+python scripts/seed_demo.py
+python main.py
 ```
 
-Dữ liệu nằm trong thư mục `data/`. Xóa thư mục này để bắt đầu lại.
+Mở http://127.0.0.1:8080. Chế độ local lưu JSON trong `data/` và dùng tài khoản mẫu không mật khẩu; chỉ dành cho phát triển/demo. Không dùng chế độ này với dữ liệu thật hoặc triển khai công khai.
 
 Chạy kiểm thử:
 
-```bash
+```powershell
 python -m pytest -q
 ```
 
-## Tài khoản mẫu (chế độ demo, không mật khẩu)
+## Cấu hình Azure
 
-| Họ tên | Vai trò | Bộ phận |
-| --- | --- | --- |
-| Nguyễn Văn An | Nhân viên | Kinh doanh |
-| Trần Thị Bình | Nhân viên | Kỹ thuật |
-| Lê Minh Cường | Trưởng bộ phận | Kinh doanh |
-| Phạm Thị Dung | Trưởng bộ phận | Kỹ thuật |
-| Vũ Thị Hoa | Kế toán trưởng | Tài chính - Kế toán |
-| Quản trị viên | Quản trị | Hành chính - Nhân sự |
+### 1. Đăng ký Microsoft Entra ID
 
-## Quy trình phê duyệt
+Trong Microsoft Entra admin center, tạo App registration dạng single-tenant. Thêm Redirect URI kiểu Web: `https://<tên-miền>/auth/callback`. Tạo client secret và lưu trong Azure Key Vault; không commit secret vào repository. Ứng dụng dùng OpenID Connect với scope `openid`, `profile`, `email`.
 
-1. Nhân viên nộp chứng từ kèm tệp -> **Chờ trưởng bộ phận duyệt**.
-2. Trưởng bộ phận cùng bộ phận duyệt:
-   - số tiền dưới 20.000.000 ₫ -> **Đã duyệt**;
-   - từ 20.000.000 ₫ trở lên -> **Chờ kế toán trưởng duyệt**.
-3. Kế toán trưởng duyệt -> **Đã duyệt**.
-4. Ở cấp nào cũng có thể từ chối (bắt buộc nêu lý do) -> **Bị từ chối**. Người nộp tải tệp đã
-   sửa lên thành phiên bản mới và quy trình bắt đầu lại.
+### 2. Tạo dịch vụ Azure
 
-Không ai tự duyệt chứng từ của mình. Chứng từ do trưởng bộ phận nộp đi thẳng tới kế toán trưởng.
+Tạo Azure SQL Database, Storage Account, Service Bus namespace/queue và Azure Container Apps Environment trong region phù hợp. Blob container `documents` cần để private; bật soft delete/versioning theo chính sách lưu trữ. Bật managed identity cho Container App và cấp quyền tối thiểu: `Storage Blob Data Contributor`, `Azure Service Bus Data Sender`/`Receiver`; giới hạn SQL identity vào database ứng dụng. Lưu `SECRET_KEY` và `AZURE_CLIENT_SECRET` trong Key Vault.
 
-## Triển khai lên Google Cloud
+### 3. Cấu hình ứng dụng
 
-Điều kiện: một project đã gắn tài khoản thanh toán, và `gcloud` đã đăng nhập (dùng Cloud Shell
-là nhanh nhất).
+Đặt các giá trị trong Container Apps secrets/environment:
 
-```bash
-PROJECT_ID=ten-project-cua-ban ./deploy/deploy.sh
-```
-
-Script thực hiện 9 bước: bật API, tạo Firestore, tạo bucket riêng tư (bật phiên bản và vòng đời),
-tạo 3 service account, tạo topic và secret, gán quyền tối thiểu, build image bằng Cloud Build,
-triển khai 2 dịch vụ Cloud Run (`chungtu-web`, `chungtu-worker`), tạo push subscription.
-Cuối cùng script in ra địa chỉ của ứng dụng.
-
-Biến tùy chọn: `REGION` (mặc định `asia-southeast1`), `BUCKET`, `LEVEL2_THRESHOLD`, `AUTH_MODE`.
-
-### Bật đăng nhập Google qua Identity-Aware Proxy (tùy chọn)
-
-Mặc định bản triển khai ở chế độ demo: ai có địa chỉ cũng chọn được tài khoản mẫu. Chỉ dùng cho
-buổi trình diễn với dữ liệu giả. Để chỉ người được cấp quyền mới vào được:
-
-1. Console -> Cloud Run -> `chungtu-web` -> Security -> **Require authentication** ->
-   **Identity-Aware Proxy (IAP)** -> Edit policy -> thêm email được phép. Với project không thuộc
-   tổ chức nào, lần bật IAP đầu tiên cần làm trong Console.
-2. Chuyển ứng dụng sang chế độ `iap`:
-
-```bash
-PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
-gcloud run services update chungtu-web --region=asia-southeast1 \
-  --update-env-vars="AUTH_MODE=iap,ADMIN_EMAILS=ban@gmail.com,IAP_AUDIENCE=/projects/${PROJECT_NUMBER}/locations/asia-southeast1/services/chungtu-web"
-```
-
-Thêm người dùng bằng dòng lệnh:
-
-```bash
-gcloud iap web add-iam-policy-binding --resource-type=cloud-run --service=chungtu-web \
-  --region=asia-southeast1 --member=user:dongnghiep@gmail.com --role=roles/iap.httpsResourceAccessor
-```
-
-Người trong `ADMIN_EMAILS` nhận vai trò Quản trị ở lần đăng nhập đầu và phân vai trò cho người
-khác tại trang **Người dùng**.
-
-### Gỡ tài nguyên
-
-```bash
-PROJECT_ID=ten-project-cua-ban ./deploy/cleanup.sh
-```
-
-### Lỗi thường gặp
-
-| Hiện tượng | Cách xử lý |
+| Biến | Mục đích |
 | --- | --- |
-| `gcloud builds submit` báo thiếu quyền | Gán `roles/cloudbuild.builds.builder` cho service account mà Cloud Build dùng (mặc định là Compute Engine default service account) |
-| `--allow-unauthenticated` bị từ chối | Chính sách tổ chức chặn truy cập công khai; dùng IAP như trên |
-| Tải tệp chậm, log có "Không tạo được URL ký" | Thiếu `roles/iam.serviceAccountTokenCreator` của `chungtu-web` trên chính nó; ứng dụng vẫn gửi tệp qua Cloud Run |
-| Không thấy thông báo mới | Xem log của `chungtu-worker`; kiểm tra subscription `chungtu-events-push` và quyền `roles/run.invoker` của `chungtu-pubsub` |
+| `BACKEND` | `azure` |
+| `AUTH_MODE` | `entra` |
+| `SECRET_KEY` | Khóa ký session cookie ngẫu nhiên, tối thiểu 32 byte |
+| `AZURE_TENANT_ID` | Tenant ID Entra |
+| `AZURE_CLIENT_ID` | Application (client) ID |
+| `AZURE_CLIENT_SECRET` | Secret app registration; nên lấy từ Key Vault |
+| `AZURE_REDIRECT_URI` | URL callback tuyệt đối, ví dụ `https://<host>/auth/callback` |
+| `AZURE_POST_LOGOUT_REDIRECT_URI` | Đường dẫn sau đăng xuất; mặc định `/login` |
+| `ADMIN_EMAILS` | Email quản trị khởi tạo, cách nhau bằng dấu phẩy |
+| `AZURE_SQL_URL` | SQLAlchemy URL đến Azure SQL |
+| `AZURE_STORAGE_ACCOUNT_URL` | `https://<storage>.blob.core.windows.net` |
+| `AZURE_STORAGE_CONTAINER` | Private container; mặc định `documents` |
+| `AZURE_SERVICEBUS_NAMESPACE` | Namespace, không gồm `.servicebus.windows.net` |
+| `AZURE_SERVICEBUS_QUEUE` | Queue; mặc định `chungtu-events` |
+| `LEVEL2_THRESHOLD` | Hạn mức duyệt cấp 2; mặc định `20000000` |
 
-## Biến môi trường
+Tạo Container App với image đã push vào Azure Container Registry, port 8080, HTTPS ingress, managed identity, secrets tham chiếu Key Vault và các biến trên. `deploy/azure-deploy.ps1` chỉ hỗ trợ bước đầu tạo Resource Group và Container Apps Environment; script không tự tạo database, storage, queue hoặc đăng ký Entra.
 
-| Biến | Mặc định | Ý nghĩa |
-| --- | --- | --- |
-| `BACKEND` | `local` | `local` hoặc `gcp` |
-| `AUTH_MODE` | `demo` | `demo` hoặc `iap` |
-| `SECRET_KEY` | giá trị thử | Khóa ký session cookie; trên Cloud Run lấy từ Secret Manager |
-| `BUCKET` | | Tên bucket Cloud Storage |
-| `PUBSUB_TOPIC` | `chungtu-events` | Topic nhận sự kiện |
-| `LEVEL2_THRESHOLD` | `20000000` | Ngưỡng số tiền cần duyệt cấp 2 |
-| `IAP_AUDIENCE` | | Audience của JWT do IAP cấp |
-| `ADMIN_EMAILS` | | Email nhận quyền quản trị ở lần đăng nhập đầu (chế độ `iap`) |
-| `ENABLE_WORKER` | `0` | `1` trên dịch vụ worker: mở `/internal/pubsub` |
-| `DATA_DIR` | `./data` | Thư mục dữ liệu khi `BACKEND=local` |
+Worker Service Bus cần chạy riêng (consumer hoặc Container Apps Job); không mở endpoint worker công khai nếu chưa có cơ chế xác thực phù hợp. Trước production cần xác minh SQL TLS, Blob private, quyền tối thiểu, cookie secure, secret rotation, backup/restore và đăng nhập đầu-cuối.
 
-## Trạng thái kiểm thử
+`pyodbc` cần Microsoft ODBC Driver 18 for SQL Server trong container. Cần bổ sung driver Microsoft theo hướng dẫn chính thức trước khi dùng Azure SQL; Dockerfile hiện chưa cài driver này.
 
-Bản local và 33 ca kiểm thử đã chạy đạt. Backend Google Cloud (`backends/gcp.py`) và
-`deploy.sh` được viết theo tài liệu chính thức, tên cờ lệnh đã đối chiếu với `gcloud` 570, nhưng
-chưa được chạy trên một project thật. Hãy chạy `deploy.sh` trước buổi bảo vệ ít nhất một lần.
+## Chuyển dữ liệu khỏi Google Cloud
+
+Backend GCP cũ và script triển khai cũ được giữ tạm để không phá hệ thống hiện tại. Dữ liệu không tự động chuyển sang Azure. Trước khi di trú cần xuất Firestore/Cloud Storage, chuyển đổi dữ liệu sang Azure SQL/Blob, đối chiếu số lượng và hash, chạy thử trên bản sao rồi mới lập lịch chuyển đổi. Không xóa tài nguyên Google trước khi xác nhận di trú thành công và có backup phục hồi.
+
+## Trạng thái
+
+Các chức năng nghiệp vụ hiện có được giữ lại. Backend Azure và xác thực Entra mới cần được kiểm thử trên môi trường có dependency và cấu hình tenant/subscription thật trước production; tài liệu/script không tự triển khai tài nguyên Azure.

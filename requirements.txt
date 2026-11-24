@@ -1,5 +1,12 @@
 Flask>=3.0,<4
 gunicorn>=22,<26
+SQLAlchemy>=2.0,<3
+msal>=1.30,<2
+azure-identity>=1.17,<2
+azure-storage-blob>=12.20,<13
+azure-servicebus>=7.12,<8
+pyodbc>=5.1,<6
+# Các gói Google chỉ cần khi dùng backend GCP cũ.
 google-cloud-firestore>=2.16,<3
 google-cloud-storage>=2.16,<4
 google-cloud-pubsub>=2.21,<3

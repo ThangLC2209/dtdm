@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -7,14 +7,16 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /srv
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ unixodbc-dev curl gnupg \
+    && pip install --no-cache-dir -r requirements.txt \
+    && apt-get purge -y gcc g++ \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY main.py .
 COPY app ./app
 
-# Không chạy bằng root bên trong container
 RUN useradd --create-home --uid 10001 appuser
 USER appuser
 
-# Cloud Run truyền cổng qua biến PORT. Một worker, nhiều luồng: hợp với tác vụ chủ yếu chờ I/O.
 CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app

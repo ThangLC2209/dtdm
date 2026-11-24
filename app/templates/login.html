@@ -1,9 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Chọn tài khoản · Chứng từ số{% endblock %}
+{% block title %}Đăng nhập · Chứng từ số{% endblock %}
 {% block content %}
 <section class="login">
+  {% if entra %}
+  <div class="login-panel">
+    <span class="brand-mark login-mark">CT</span>
+    <p class="eyebrow">HỆ THỐNG QUẢN LÝ CHỨNG TỪ</p>
+    <h1>Đăng nhập an toàn</h1>
+    <p class="muted">Sử dụng tài khoản Microsoft được tổ chức của bạn cấp để tiếp tục.</p>
+    <a class="btn btn-primary microsoft-login" href="{{ url_for('main.entra_login') }}">
+      <span class="microsoft-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      Đăng nhập bằng Microsoft
+    </a>
+    <small class="login-note">Tài khoản mới được cấp quyền nhân viên mặc định. Quản trị viên sẽ phân quyền sau khi đăng nhập.</small>
+  </div>
+  {% else %}
   <h1>Chọn tài khoản để trình diễn</h1>
-  <p class="muted">Chế độ demo không dùng mật khẩu. Khi triển khai thật, người dùng đăng nhập bằng tài khoản Google qua Identity-Aware Proxy.</p>
+  <p class="muted">Chế độ demo chỉ dùng khi chạy thử trên máy cá nhân. Khi triển khai thật, hãy cấu hình đăng nhập Microsoft Entra ID.</p>
   <div class="user-grid">
     {% for u in users %}
     <form method="post" action="{{ url_for('main.login') }}">
@@ -11,14 +24,11 @@
       <input type="hidden" name="email" value="{{ u.email }}">
       <button class="user-card role-{{ u.role }}" type="submit">
         <span class="avatar">{{ u.name.split(' ')[-1][0]|upper }}</span>
-        <span class="user-meta">
-          <strong>{{ u.name }}</strong>
-          <span>{{ ROLES[u.role] }}</span>
-          <small>{{ u.department }}</small>
-        </span>
+        <span class="user-meta"><strong>{{ u.name }}</strong><span>{{ ROLES[u.role] }}</span><small>{{ u.department }}</small></span>
       </button>
     </form>
     {% endfor %}
   </div>
+  {% endif %}
 </section>
 {% endblock %}

@@ -166,10 +166,15 @@ def publish(event: dict) -> None:
             doc_id=event["doc_id"], error=str(exc))
 
 
-# --------------------------------------------------------------------------- đăng nhập demo
+# --------------------------------------------------------------------------- đăng nhập
 @bp.route("/login", methods=["GET", "POST"])
 def login():
-    if current_app.config["AUTH_MODE"] != "demo":
+    mode = current_app.config["AUTH_MODE"]
+    if mode == "entra":
+        if request.method == "POST":
+            return redirect(url_for("main.entra_login"))
+        return render_template("login.html", entra=True, users=[])
+    if mode != "demo":
         abort(404)
     if request.method == "POST":
         user = svc().repo.get_user(request.form.get("email", ""))
@@ -179,12 +184,79 @@ def login():
         return redirect(url_for("main.dashboard"))
     order = list(wf.ROLES)
     people = sorted(svc().repo.list_users(), key=lambda u: (order.index(u["role"]), u["email"]))
-    return render_template("login.html", users=people)
+    return render_template("login.html", entra=False, users=people)
+
+
+@bp.get("/auth/login")
+def entra_login():
+    if current_app.config["AUTH_MODE"] != "entra":
+        abort(404)
+    config = current_app.config
+    required = ("AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_REDIRECT_URI")
+    if any(not config[key] for key in required):
+        abort(503, description="Cần cấu hình ứng dụng Microsoft Entra ID trước khi đăng nhập.")
+    import msal
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    session["entra_oauth_state"] = state
+    session["entra_oauth_nonce"] = nonce
+    result = msal.ConfidentialClientApplication(
+        config["AZURE_CLIENT_ID"],
+        authority=config["AZURE_AUTHORITY"] or f"https://login.microsoftonline.com/{config['AZURE_TENANT_ID']}",
+        client_credential=config["AZURE_CLIENT_SECRET"],
+    ).initiate_auth_code_flow(
+        scopes=["openid", "profile", "email"],
+        redirect_uri=config["AZURE_REDIRECT_URI"], state=state,
+        nonce=nonce,
+    )
+    session["entra_auth_flow"] = result
+    return redirect(result["auth_uri"])
+
+
+@bp.get("/auth/callback")
+def entra_callback():
+    if current_app.config["AUTH_MODE"] != "entra":
+        abort(404)
+    flow = session.pop("entra_auth_flow", None)
+    expected_state = session.pop("entra_oauth_state", None)
+    expected_nonce = session.pop("entra_oauth_nonce", None)
+    if not flow or not expected_state or request.args.get("state") != expected_state:
+        abort(400, description="Phiên đăng nhập Microsoft không hợp lệ hoặc đã hết hạn.")
+    if request.args.get("error"):
+        log("WARNING", "Đăng nhập Microsoft bị từ chối", error=request.args.get("error"))
+        return redirect(url_for("main.login"))
+    import msal
+    config = current_app.config
+    authority = config["AZURE_AUTHORITY"] or f"https://login.microsoftonline.com/{config['AZURE_TENANT_ID']}"
+    result = msal.ConfidentialClientApplication(
+        config["AZURE_CLIENT_ID"], authority=authority,
+        client_credential=config["AZURE_CLIENT_SECRET"],
+    ).acquire_token_by_auth_code_flow(flow, request.args.to_dict())
+    claims = result.get("id_token_claims") or {}
+    if result.get("error") or claims.get("nonce") != expected_nonce:
+        log("WARNING", "Không xác thực được phản hồi đăng nhập Microsoft", error=result.get("error"))
+        abort(401)
+    issuer_tid = claims.get("tid")
+    if issuer_tid != config["AZURE_TENANT_ID"]:
+        abort(401)
+    email = (claims.get("preferred_username") or claims.get("email") or "").lower()
+    if not email:
+        abort(401)
+    session.clear()
+    session["entra_user"] = {"email": email, "name": claims.get("name"),
+                             "preferred_username": email}
+    return redirect(url_for("main.dashboard"))
 
 
 @bp.post("/logout")
 def logout():
-    session.pop("email", None)
+    session.clear()
+    if current_app.config["AUTH_MODE"] == "entra":
+        tenant = current_app.config["AZURE_TENANT_ID"] or "common"
+        redirect_uri = current_app.config["AZURE_POST_LOGOUT_REDIRECT_URI"]
+        if redirect_uri.startswith("/"):
+            redirect_uri = request.url_root.rstrip("/") + redirect_uri
+        return redirect(f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/logout?post_logout_redirect_uri={redirect_uri}")
     return redirect(url_for("main.login") if current_app.config["AUTH_MODE"] == "demo"
                     else url_for("main.dashboard"))
 

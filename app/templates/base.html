@@ -3,49 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f5f5c">
   <title>{% block title %}Chứng từ số{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="{{ url_for('main.dashboard') }}">
-    <span class="brand-mark">CT</span>
-    <span>Chứng từ số</span>
-  </a>
+  <a class="brand" href="{{ url_for('main.dashboard') }}"><span class="brand-mark">CT</span><span>Chứng từ số</span></a>
   {% if user %}
-  <nav class="nav">
+  <nav class="nav" aria-label="Điều hướng chính">
     <a href="{{ url_for('main.dashboard') }}" {% if request.endpoint == 'main.dashboard' %}class="active"{% endif %}>Tổng quan</a>
     <a href="{{ url_for('main.list_documents') }}" {% if request.endpoint == 'main.list_documents' %}class="active"{% endif %}>Chứng từ</a>
     <a href="{{ url_for('main.notifications') }}" {% if request.endpoint == 'main.notifications' %}class="active"{% endif %}>Thông báo{% if unread %} <span class="badge-count">{{ unread }}</span>{% endif %}</a>
-    {% if user.role in ('admin', 'accountant') %}
-    <a href="{{ url_for('main.audit_log') }}" {% if request.endpoint == 'main.audit_log' %}class="active"{% endif %}>Nhật ký</a>
-    {% endif %}
-    {% if user.role == 'admin' %}
-    <a href="{{ url_for('main.users') }}" {% if request.endpoint == 'main.users' %}class="active"{% endif %}>Người dùng</a>
-    {% endif %}
+    {% if user.role in ('admin', 'accountant') %}<a href="{{ url_for('main.audit_log') }}" {% if request.endpoint == 'main.audit_log' %}class="active"{% endif %}>Nhật ký</a>{% endif %}
+    {% if user.role == 'admin' %}<a href="{{ url_for('main.users') }}" {% if request.endpoint == 'main.users' %}class="active"{% endif %}>Người dùng</a>{% endif %}
   </nav>
-  <div class="who">
-    <div>
-      <strong>{{ user.name }}</strong>
-      <small>{{ ROLES[user.role] }} · {{ user.department }}</small>
-    </div>
-    {% if auth_mode == 'demo' %}
-    <form method="post" action="{{ url_for('main.logout') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="btn btn-ghost" type="submit">Đổi tài khoản</button>
-    </form>
-    {% endif %}
+  <div class="who"><div><strong>{{ user.name }}</strong><small>{{ ROLES[user.role] }} · {{ user.department }}</small></div>
+    <form method="post" action="{{ url_for('main.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-ghost" type="submit">Đăng xuất</button></form>
   </div>
   {% endif %}
 </header>
 <main class="page">
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for category, message in messages %}
-      <div class="flash flash-{{ category }}" role="status">{{ message }}</div>
-    {% endfor %}
-  {% endwith %}
+  {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="flash flash-{{ category }}" role="status">{{ message }}</div>{% endfor %}{% endwith %}
   {% block content %}{% endblock %}
 </main>
-<footer class="footer">Đồ án Điện toán đám mây · Cloud Run · Cloud Storage · Firestore · Pub/Sub</footer>
+<footer class="footer">Hệ thống tiếp nhận, lưu trữ và phê duyệt chứng từ · Lưu trữ bảo mật trên Azure</footer>
 </body>
 </html>
