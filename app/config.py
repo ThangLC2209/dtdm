@@ -1,6 +1,24 @@
 """Cấu hình ứng dụng, đọc từ biến môi trường (theo nguyên tắc 12-factor)."""
 import os
 
+DEFAULT_SECRET_KEY = "chi-dung-khi-chay-thu"
+
+
+def validate_config(config: dict) -> None:
+    """Chặn khởi động với cấu hình không an toàn khi chạy trên cloud."""
+    if config["BACKEND"] == "local":
+        return
+    errors = []
+    secret = config.get("SECRET_KEY") or ""
+    if secret == DEFAULT_SECRET_KEY or len(secret) < 32:
+        errors.append("SECRET_KEY phải được đặt (tối thiểu 32 ký tự) khi chạy trên cloud.")
+    if config["AUTH_MODE"] not in ("entra", "password", "iap"):
+        errors.append("AUTH_MODE=demo không được dùng trên cloud; hãy dùng 'password' hoặc 'entra'.")
+    if config["AUTH_MODE"] == "password" and not config["ADMIN_EMAILS"]:
+        errors.append("AUTH_MODE=password cần ADMIN_EMAILS để tạo quản trị viên đầu tiên.")
+    if errors:
+        raise RuntimeError("Cấu hình không hợp lệ: " + " ".join(errors))
+
 
 def load_config() -> dict:
     env = os.environ.get
@@ -9,7 +27,7 @@ def load_config() -> dict:
     return {
         "BACKEND": backend,
         "AUTH_MODE": auth_mode,
-        "SECRET_KEY": env("SECRET_KEY", "chi-dung-khi-chay-thu"),
+        "SECRET_KEY": env("SECRET_KEY", DEFAULT_SECRET_KEY),
         "DATA_DIR": env("DATA_DIR", "./data"),
         "GCP_PROJECT": env("GOOGLE_CLOUD_PROJECT"),
         "BUCKET": env("BUCKET"),

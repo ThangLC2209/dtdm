@@ -5,19 +5,35 @@ import json
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
-from sqlalchemy import Column, Integer, MetaData, String, Table, Text, create_engine, select, update
+from sqlalchemy import (Column, Integer, MetaData, String, Table, Unicode, UnicodeText, create_engine,
+                        select, update)
 
 VN_TZ = timezone(timedelta(hours=7))
 metadata = MetaData()
-users = Table("users", metadata, Column("email", String(320), primary_key=True), Column("payload", Text, nullable=False))
-documents = Table("documents", metadata, Column("id", String(64), primary_key=True), Column("payload", Text, nullable=False))
-audit_log = Table("audit_log", metadata, Column("id", String(64), primary_key=True), Column("doc_id", String(64), nullable=False), Column("at", String(40), nullable=False), Column("payload", Text, nullable=False))
-notifications = Table("notifications", metadata, Column("id", String(400), primary_key=True), Column("recipient", String(320), nullable=False), Column("at", String(40), nullable=False), Column("payload", Text, nullable=False))
+# Dùng Unicode/UnicodeText (NVARCHAR trên Azure SQL): VARCHAR sẽ làm mất dấu tiếng Việt trong payload JSON
+users = Table("users", metadata, Column("email", Unicode(320), primary_key=True), Column("payload", UnicodeText, nullable=False))
+documents = Table("documents", metadata, Column("id", String(64), primary_key=True), Column("payload", UnicodeText, nullable=False))
+audit_log = Table("audit_log", metadata, Column("id", String(64), primary_key=True), Column("doc_id", String(64), nullable=False), Column("at", String(40), nullable=False), Column("payload", UnicodeText, nullable=False))
+notifications = Table("notifications", metadata, Column("id", Unicode(400), primary_key=True), Column("recipient", Unicode(320), nullable=False), Column("at", String(40), nullable=False), Column("payload", UnicodeText, nullable=False))
 counters = Table("counters", metadata, Column("name", String(100), primary_key=True), Column("value", Integer, nullable=False))
 
 
 def _payload(value: dict) -> str:
     return json.dumps(value, ensure_ascii=False)
+
+
+def _credential():
+    """Managed identity cho Blob/Service Bus.
+
+    Bỏ EnvironmentCredential vì AZURE_CLIENT_ID/AZURE_CLIENT_SECRET đã dùng cho đăng nhập Entra;
+    nếu không bỏ, SDK sẽ đăng nhập bằng app registration thay vì managed identity.
+    """
+    import os
+    from azure.identity import DefaultAzureCredential
+    return DefaultAzureCredential(
+        exclude_environment_credential=True,
+        managed_identity_client_id=os.environ.get("AZURE_MANAGED_IDENTITY_CLIENT_ID") or None,
+    )
 
 
 class AzureSQLRepo:
@@ -114,17 +130,18 @@ class AzureSQLRepo:
         with self.engine.begin() as conn:
             rows = conn.execute(select(notifications.c.id, notifications.c.payload).where(notifications.c.recipient == email)).all()
             for row in rows:
-                item = json.loads(row["payload"])
+                item = json.loads(row.payload)
                 if not item.get("read"):
                     item["read"] = True
-                    conn.execute(update(notifications).where(notifications.c.id == row["id"]).values(payload=_payload(item)))
+                    conn.execute(update(notifications).where(notifications.c.id == row.id).values(payload=_payload(item)))
 
 
 class AzureBlobStorage:
     def __init__(self, account_url: str, container_name: str):
-        from azure.identity import DefaultAzureCredential
         from azure.storage.blob import BlobServiceClient
-        self._service = BlobServiceClient(account_url=account_url, credential=DefaultAzureCredential())
+        if not account_url:
+            raise ValueError("Cần cấu hình AZURE_STORAGE_ACCOUNT_URL.")
+        self._service = BlobServiceClient(account_url=account_url, credential=_credential())
         self._container = self._service.get_container_client(container_name)
         try:
             self._container.create_container()
@@ -151,22 +168,24 @@ class AzureBlobStorage:
         return f"{self._container.url}/{quote(name)}?{token}"
 
 
+def servicebus_client(connection_string: str | None, namespace: str | None):
+    """Tạo client Service Bus: ưu tiên managed identity, connection string chỉ dùng khi cần."""
+    from azure.servicebus import ServiceBusClient
+    if connection_string:
+        return ServiceBusClient.from_connection_string(connection_string)
+    if not namespace:
+        raise ValueError("Cần cấu hình AZURE_SERVICEBUS_NAMESPACE hoặc connection string.")
+    host = namespace if "." in namespace else f"{namespace}.servicebus.windows.net"
+    return ServiceBusClient(host, _credential())
+
+
 class AzureServiceBusPublisher:
-    def __init__(self, connection_string: str | None, queue_name: str):
-        from azure.identity import DefaultAzureCredential
-        from azure.servicebus import ServiceBusClient
-        if connection_string:
-            self._client = ServiceBusClient.from_connection_string(connection_string)
-        else:
-            import os
-            namespace = os.environ.get("AZURE_SERVICEBUS_NAMESPACE")
-            if not namespace:
-                raise ValueError("Cần cấu hình AZURE_SERVICEBUS_NAMESPACE hoặc connection string.")
-            self._client = ServiceBusClient(f"{namespace}.servicebus.windows.net", DefaultAzureCredential())
+    def __init__(self, connection_string: str | None, namespace: str | None, queue_name: str):
+        self._client = servicebus_client(connection_string, namespace)
         self._queue = queue_name
 
     def publish(self, event: dict) -> None:
         from azure.servicebus import ServiceBusMessage
-        with self._client:
-            with self._client.get_queue_sender(queue_name=self._queue) as sender:
-                sender.send_messages(ServiceBusMessage(_payload(event), message_id=event["id"]))
+        # Giữ client mở để dùng lại; chỉ đóng sender sau mỗi lần gửi
+        with self._client.get_queue_sender(queue_name=self._queue) as sender:
+            sender.send_messages(ServiceBusMessage(_payload(event), message_id=event["id"]))

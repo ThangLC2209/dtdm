@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Flask
 
-from .config import load_config
+from .config import load_config, validate_config
 from .routes import bp
 from .services import build_services
 
@@ -33,6 +33,7 @@ def create_app(overrides: dict | None = None) -> Flask:
     app.config.update(load_config())
     if overrides:
         app.config.update(overrides)
+    validate_config(app.config)
     app.extensions["svc"] = build_services(app.config)
     app.jinja_env.filters.update(money=format_money, vntime=format_time, filesize=format_size)
     app.register_blueprint(bp)

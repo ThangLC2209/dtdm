@@ -43,6 +43,7 @@ def build_services(config: dict) -> Services:
         publisher = AzureServiceBusPublisher(config["AZURE_SERVICEBUS_CONNECTION_STRING"],
                                              config["AZURE_SERVICEBUS_NAMESPACE"],
                                              config["AZURE_SERVICEBUS_QUEUE"])
+        # Hàng đợi chỉ chuyển sự kiện; worker riêng (app/servicebus_worker.py) tạo thông báo
     elif backend == "gcp":
         from .backends import gcp
         repo = gcp.FirestoreRepo(config.get("GCP_PROJECT"))

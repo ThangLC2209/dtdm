@@ -90,11 +90,37 @@ Tạo Azure SQL Database, Storage Account, Service Bus namespace/queue và Azure
 | `AZURE_SERVICEBUS_QUEUE` | Queue; mặc định `chungtu-events` |
 | `LEVEL2_THRESHOLD` | Hạn mức duyệt cấp 2; mặc định `20000000` |
 
-Tạo Container App với image đã push vào Azure Container Registry, port 8080, HTTPS ingress, managed identity, secrets tham chiếu Key Vault và các biến trên. `deploy/azure-deploy.ps1` chỉ hỗ trợ bước đầu tạo Resource Group và Container Apps Environment; script không tự tạo database, storage, queue hoặc đăng ký Entra.
+Khi chạy trên cloud (`BACKEND` khác `local`), ứng dụng từ chối khởi động nếu `SECRET_KEY` chưa đặt hoặc ngắn hơn 32 ký tự, hoặc nếu `AUTH_MODE=demo`.
 
-Worker Service Bus cần chạy riêng (consumer hoặc Container Apps Job); không mở endpoint worker công khai nếu chưa có cơ chế xác thực phù hợp. Trước production cần xác minh SQL TLS, Blob private, quyền tối thiểu, cookie secure, secret rotation, backup/restore và đăng nhập đầu-cuối.
+### 4. Triển khai tự động bằng script
 
-`pyodbc` cần Microsoft ODBC Driver 18 for SQL Server trong container. Cần bổ sung driver Microsoft theo hướng dẫn chính thức trước khi dùng Azure SQL; Dockerfile hiện chưa cài driver này.
+`deploy/azure-deploy.ps1` tạo toàn bộ hạ tầng và triển khai ứng dụng. Chạy trên máy có Azure CLI, tài khoản có quyền Owner trên subscription:
+
+```powershell
+az login
+.\deploy\azure-deploy.ps1 -SubscriptionId <subscription-id> -ResourceGroup rg-chungtu -AdminEmails "admin@congty.vn"
+```
+
+Script tạo (tên có tiền tố tự sinh, chạy lại an toàn):
+
+| Tài nguyên | Ghi chú |
+| --- | --- |
+| Managed identity | Dùng chung cho web và worker; không dùng mật khẩu hay connection string |
+| Azure Container Registry | Build image trên Azure bằng `az acr build`, không cần Docker trên máy |
+| Storage Account + container `documents` | Riêng tư, tắt shared key, bật soft delete 30 ngày và versioning |
+| Service Bus (Basic) + queue `chungtu-events` | Tắt xác thực bằng key, chỉ dùng managed identity |
+| Azure SQL (serverless, tự tạm dừng sau 60 phút) | Chỉ xác thực Microsoft Entra; người chạy script là quản trị SQL |
+| Key Vault | Lưu `SECRET_KEY` sinh ngẫu nhiên (và secret Entra nếu dùng) |
+| Container Apps: web + worker | Web mở HTTPS; worker `python -m app.servicebus_worker` không mở cổng |
+
+Mặc định dùng `AUTH_MODE=password`. Để dùng Microsoft Entra ID: thêm `-AuthMode entra -EntraClientId <client-id> -EntraClientSecret (Read-Host -AsSecureString)`, rồi thêm Redirect URI mà script in ra vào App registration.
+
+Sau khi chạy xong:
+
+1. **Cấp quyền Azure SQL cho managed identity.** Nếu máy có `sqlcmd` (`winget install sqlcmd`), script tự làm. Nếu không, script in ra đoạn T-SQL; chạy đoạn đó trong Azure Portal > SQL database > Query editor, rồi chạy lại script hoặc restart Container App.
+2. **Đăng ký tài khoản quản trị ngay** tại `https://<địa-chỉ>/register` bằng email trong `-AdminEmails`.
+
+Image dùng Debian 12 và đã cài Microsoft ODBC Driver 18 để `pyodbc` kết nối Azure SQL bằng managed identity. Worker Service Bus nhận sự kiện chứng từ và tạo thông báo; thiếu worker thì thông báo không được tạo. Trước production nên kiểm tra thêm backup/restore, xoay vòng secret và đăng nhập đầu-cuối.
 
 ## Chuyển dữ liệu khỏi Google Cloud
 
@@ -102,4 +128,4 @@ Backend GCP cũ và script triển khai cũ được giữ tạm để không ph
 
 ## Trạng thái
 
-Các chức năng nghiệp vụ hiện có được giữ lại. Backend Azure và xác thực Entra mới cần được kiểm thử trên môi trường có dependency và cấu hình tenant/subscription thật trước production; tài liệu/script không tự triển khai tài nguyên Azure.
+Các chức năng nghiệp vụ hiện có được giữ lại. Backend Azure và xác thực Entra mới cần được kiểm thử trên môi trường có dependency và cấu hình tenant/subscription thật trước production. Script `deploy/azure-deploy.ps1` tạo tài nguyên Azure khi được chạy với tài khoản có quyền trên subscription.
