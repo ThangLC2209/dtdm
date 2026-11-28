@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Đăng ký · Chứng từ số{% endblock %}
+{% block content %}
+<section class="login">
+  <div class="login-panel">
+    <span class="brand-mark login-mark">CT</span>
+    <p class="eyebrow">HỆ THỐNG QUẢN LÝ CHỨNG TỪ</p>
+    <h1>Đăng ký tài khoản</h1>
+    <p class="muted">Sau khi đăng ký, quản trị viên sẽ duyệt và cấp quyền. Bạn đăng nhập được khi tài khoản đã được duyệt.</p>
+    <form class="form login-form" method="post" action="{{ url_for('main.register') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Họ tên <input type="text" name="name" value="{{ form.name }}" maxlength="80" autocomplete="name" required autofocus></label>
+      <label>Email <input type="email" name="email" value="{{ form.email }}" maxlength="320" autocomplete="email" required></label>
+      <label>Bộ phận
+        <select name="department">
+          {% for d in DEPARTMENTS %}<option {% if d == form.department %}selected{% endif %}>{{ d }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Mật khẩu <input type="password" name="password" minlength="{{ min_length }}" autocomplete="new-password" required></label>
+      <label>Nhập lại mật khẩu <input type="password" name="confirm" minlength="{{ min_length }}" autocomplete="new-password" required></label>
+      <button class="btn btn-primary login-submit" type="submit">Gửi đăng ký</button>
+    </form>
+    <small class="login-note">Đã có tài khoản? <a href="{{ url_for('main.login') }}">Đăng nhập</a></small>
+  </div>
+</section>
+{% endblock %}

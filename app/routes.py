@@ -174,6 +174,8 @@ def login():
         if request.method == "POST":
             return redirect(url_for("main.entra_login"))
         return render_template("login.html", entra=True, users=[])
+    if mode == "password":
+        return password_login()
     if mode != "demo":
         abort(404)
     if request.method == "POST":
@@ -185,6 +187,80 @@ def login():
     order = list(wf.ROLES)
     people = sorted(svc().repo.list_users(), key=lambda u: (order.index(u["role"]), u["email"]))
     return render_template("login.html", entra=False, users=people)
+
+
+def password_login():
+    """Đăng nhập bằng email và mật khẩu; chỉ tài khoản đã được quản trị viên duyệt mới vào được."""
+    email = ""
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        user = svc().repo.get_user(email) if email else None
+        if not auth.verify_password(user, password):
+            log("WARNING", "Đăng nhập mật khẩu thất bại", email=email)
+            flash("Email hoặc mật khẩu không đúng.", "error")
+        elif user.get("status") == auth.PENDING:
+            flash("Tài khoản đang chờ quản trị viên duyệt. Vui lòng thử lại sau.", "error")
+        elif not auth.is_active(user):
+            flash("Tài khoản đã bị khóa. Hãy liên hệ quản trị viên.", "error")
+        else:
+            # Tạo phiên mới để tránh session fixation
+            session.clear()
+            session["email"] = user["email"]
+            log("INFO", "Đăng nhập mật khẩu thành công", email=user["email"])
+            return redirect(url_for("main.dashboard"))
+    return render_template("login.html", entra=False, password_mode=True, users=[], email=email)
+
+
+@bp.route("/register", methods=["GET", "POST"])
+def register():
+    """Nhân viên tự đăng ký; tài khoản ở trạng thái chờ duyệt cho tới khi quản trị viên cấp quyền."""
+    if current_app.config["AUTH_MODE"] != "password":
+        abort(404)
+    if g.user is not None:
+        return redirect(url_for("main.dashboard"))
+    form = {"email": "", "name": "", "department": wf.DEPARTMENTS[0]}
+    if request.method == "POST":
+        form = {
+            "email": request.form.get("email", "").strip().lower(),
+            "name": request.form.get("name", "").strip()[:80],
+            "department": request.form.get("department", ""),
+        }
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm", "")
+        repo = svc().repo
+        error = None
+        if "@" not in form["email"] or len(form["email"]) > 320 or not form["name"]:
+            error = "Hãy nhập họ tên và email hợp lệ."
+        elif form["department"] not in wf.DEPARTMENTS:
+            error = "Bộ phận không hợp lệ."
+        elif len(password) < auth.MIN_PASSWORD_LENGTH:
+            error = f"Mật khẩu cần tối thiểu {auth.MIN_PASSWORD_LENGTH} ký tự."
+        elif password != confirm:
+            error = "Mật khẩu nhập lại không khớp."
+        elif repo.get_user(form["email"]) is not None:
+            error = "Email này đã được đăng ký. Hãy đăng nhập hoặc liên hệ quản trị viên."
+        if error:
+            flash(error, "error")
+        else:
+            # Email trong ADMIN_EMAILS được kích hoạt ngay làm quản trị viên đầu tiên;
+            # mọi người khác là nhân viên chờ duyệt, không tự nhận quyền cao.
+            is_admin = form["email"] in current_app.config["ADMIN_EMAILS"]
+            repo.upsert_user({
+                "email": form["email"], "name": form["name"], "department": form["department"],
+                "role": "admin" if is_admin else "employee",
+                "status": auth.ACTIVE if is_admin else auth.PENDING,
+                "password_hash": auth.hash_password(password),
+                "registered_at": now_iso(),
+            })
+            log("NOTICE", "Đăng ký tài khoản mới", email=form["email"], admin=is_admin)
+            if is_admin:
+                flash("Đã tạo tài khoản quản trị viên. Hãy đăng nhập.", "success")
+            else:
+                flash("Đăng ký thành công. Tài khoản sẽ dùng được sau khi quản trị viên duyệt.",
+                      "success")
+            return redirect(url_for("main.login"))
+    return render_template("register.html", form=form, min_length=auth.MIN_PASSWORD_LENGTH)
 
 
 @bp.get("/auth/login")
@@ -257,7 +333,7 @@ def logout():
         if redirect_uri.startswith("/"):
             redirect_uri = request.url_root.rstrip("/") + redirect_uri
         return redirect(f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/logout?post_logout_redirect_uri={redirect_uri}")
-    return redirect(url_for("main.login") if current_app.config["AUTH_MODE"] == "demo"
+    return redirect(url_for("main.login") if current_app.config["AUTH_MODE"] in ("demo", "password")
                     else url_for("main.dashboard"))
 
 
@@ -448,23 +524,51 @@ def audit_log():
 @auth.roles_required("admin")
 def users():
     repo = svc().repo
+    password_mode = current_app.config["AUTH_MODE"] == "password"
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         name = request.form.get("name", "").strip()[:80]
         role = request.form.get("role")
         department = request.form.get("department")
+        action = request.form.get("action", "save")
+        existing = repo.get_user(email)
+        if action in ("approve", "reject", "lock", "unlock") and not password_mode:
+            abort(400)
+        if action in ("reject", "lock"):
+            if existing is None or email == g.user["email"]:
+                flash("Không thể khóa tài khoản này.", "error")
+            else:
+                repo.upsert_user({**existing, "status": auth.REJECTED})
+                log("NOTICE", "Khóa/từ chối tài khoản", target=email, actor=g.user["email"])
+                flash(f"Đã khóa tài khoản {email}.", "success")
+            return redirect(url_for("main.users"))
         if "@" not in email or role not in wf.ROLES or department not in wf.DEPARTMENTS:
             flash("Thông tin người dùng không hợp lệ.", "error")
         elif email == g.user["email"] and role != "admin":
             flash("Không thể tự hạ quyền quản trị của chính mình.", "error")
         else:
-            existing = repo.get_user(email) or {}
-            repo.upsert_user({"email": email, "role": role, "department": department,
-                              "name": name or existing.get("name") or email.split("@")[0]})
-            log("NOTICE", "Cập nhật người dùng", target=email, role=role, actor=g.user["email"])
-            flash(f"Đã lưu người dùng {email}.", "success")
+            # Giữ lại các trường khác (mật khẩu, trạng thái...) khi cập nhật vai trò
+            user = {**(existing or {}), "email": email, "role": role, "department": department,
+                    "name": name or (existing or {}).get("name") or email.split("@")[0]}
+            if action in ("approve", "unlock"):
+                if existing is None:
+                    abort(400)
+                user["status"] = auth.ACTIVE
+                user["approved_by"] = g.user["email"]
+                user["approved_at"] = now_iso()
+            repo.upsert_user(user)
+            log("NOTICE", "Cập nhật người dùng", target=email, role=role, action=action,
+                actor=g.user["email"])
+            if action == "approve":
+                flash(f"Đã duyệt {email} với vai trò {wf.ROLES[role]}.", "success")
+            else:
+                flash(f"Đã lưu người dùng {email}.", "success")
         return redirect(url_for("main.users"))
-    return render_template("users.html", users=repo.list_users())
+    all_users = repo.list_users()
+    pending = [u for u in all_users if u.get("status") == auth.PENDING]
+    others = [u for u in all_users if u.get("status") != auth.PENDING]
+    return render_template("users.html", users=others, pending=pending,
+                           password_mode=password_mode, ACCOUNT_STATUS=auth.STATUS_LABELS)
 
 
 # --------------------------------------------------------------------------- hạ tầng

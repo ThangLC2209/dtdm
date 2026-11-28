@@ -32,6 +32,26 @@ python main.py
 
 Mở http://127.0.0.1:8080. Chế độ local lưu JSON trong `data/` và dùng tài khoản mẫu không mật khẩu; chỉ dành cho phát triển/demo. Không dùng chế độ này với dữ liệu thật hoặc triển khai công khai.
 
+### Đăng nhập bằng email và mật khẩu (`AUTH_MODE=password`)
+
+Dùng khi chưa có Microsoft Entra ID nhưng vẫn cần tài khoản thật thay cho chế độ chọn tài khoản demo.
+
+```powershell
+$env:AUTH_MODE = "password"
+$env:ADMIN_EMAILS = "admin@congty.vn"
+$env:SECRET_KEY = "<chuỗi-ngẫu-nhiên-tối-thiểu-32-byte>"
+python main.py
+```
+
+Luồng sử dụng:
+
+1. Quản trị viên vào `/register`, đăng ký bằng email nằm trong `ADMIN_EMAILS`. Tài khoản này được kích hoạt ngay với quyền quản trị.
+2. Nhân viên vào `/register`, nhập họ tên, email, bộ phận và mật khẩu (tối thiểu 8 ký tự). Tài khoản ở trạng thái **Chờ duyệt** và chưa đăng nhập được.
+3. Quản trị viên vào **Người dùng**, chọn vai trò và bộ phận cho từng đăng ký rồi bấm **Duyệt** (hoặc **Từ chối**).
+4. Từ đó nhân viên đăng nhập tại `/login` bằng email và mật khẩu đã đăng ký. Quản trị viên có thể **Khóa** hoặc **Mở khóa** tài khoản bất cứ lúc nào; tài khoản bị khóa mất quyền ngay ở thao tác kế tiếp.
+
+Mật khẩu chỉ lưu dạng băm (Werkzeug `scrypt`), không lưu bản gốc. Hãy đăng ký email quản trị ngay sau khi triển khai, vì ai đăng ký email trong `ADMIN_EMAILS` trước sẽ nhận quyền quản trị. Chế độ này chưa có giới hạn số lần đăng nhập sai và chưa có chức năng quên mật khẩu.
+
 Chạy kiểm thử:
 
 ```powershell

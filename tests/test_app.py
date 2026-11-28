@@ -206,3 +206,99 @@ def test_pubsub_push_is_idempotent(tmp_path):
     # Tin hỏng được xác nhận để không bị giao lại mãi
     bad = {"message": {"data": "khong-phai-base64!!", "messageId": "m-2"}}
     assert client.post("/internal/pubsub", json=bad).status_code == 204
+
+
+# --------------------------------------------------------------------------- đăng nhập mật khẩu
+BOSS, NEW = "boss@congty.vn", "nv.moi@congty.vn"
+
+
+@pytest.fixture
+def pw_app(tmp_path):
+    return create_app({"BACKEND": "local", "AUTH_MODE": "password", "DATA_DIR": str(tmp_path),
+                       "TESTING": True, "SECRET_KEY": "test", "ADMIN_EMAILS": [BOSS]})
+
+
+def register(browser, email, password="matkhau-123", confirm=None, name="Người Mới"):
+    return browser.post("/register", {"email": email, "name": name, "department": "Kỹ thuật",
+                                      "password": password, "confirm": confirm or password})
+
+
+def pw_login(browser, email, password="matkhau-123"):
+    return browser.post("/login", {"email": email, "password": password})
+
+
+def test_password_mode_full_flow(pw_app):
+    repo = pw_app.extensions["svc"].repo
+    # Email trong ADMIN_EMAILS được kích hoạt ngay làm quản trị viên
+    register(Browser(pw_app), BOSS, name="Sếp")
+    assert repo.get_user(BOSS)["role"] == "admin" and repo.get_user(BOSS)["status"] == "active"
+
+    # Nhân viên đăng ký: chờ duyệt, không đăng nhập được, mật khẩu không lưu dạng thô
+    register(Browser(pw_app), NEW)
+    stored = repo.get_user(NEW)
+    assert stored["status"] == "pending" and stored["role"] == "employee"
+    assert "matkhau-123" not in json.dumps(stored)
+    staff = Browser(pw_app)
+    pw_login(staff, NEW)
+    assert staff.get("/").status_code == 302
+
+    # Quản trị viên duyệt và cấp quyền trưởng bộ phận
+    admin = Browser(pw_app)
+    pw_login(admin, BOSS)
+    assert NEW in admin.get("/admin/users").get_data(as_text=True)
+    admin.post("/admin/users", {"email": NEW, "name": "Người Mới", "role": "manager",
+                                "department": "Kỹ thuật", "action": "approve"})
+    approved = repo.get_user(NEW)
+    assert approved["status"] == "active" and approved["role"] == "manager"
+    assert approved["password_hash"] == stored["password_hash"]  # không mất mật khẩu
+
+    # Sau khi duyệt, nhân viên đăng nhập bằng email + mật khẩu là vào được
+    staff = Browser(pw_app)
+    assert pw_login(staff, NEW).headers["Location"].endswith("/")
+    assert staff.get("/").status_code == 200
+
+    # Khóa tài khoản: phiên đang mở mất quyền ngay
+    admin.post("/admin/users", {"email": NEW, "action": "lock"})
+    assert staff.get("/").status_code == 302
+
+
+def test_password_login_rejects_bad_credentials(pw_app):
+    register(Browser(pw_app), BOSS)
+    b = Browser(pw_app)
+    assert pw_login(b, BOSS, "sai-mat-khau").status_code == 200
+    assert b.get("/").status_code == 302
+    assert pw_login(b, "khong.co@congty.vn").status_code == 200
+    assert b.get("/").status_code == 302
+
+
+def test_registration_validation(pw_app):
+    repo = pw_app.extensions["svc"].repo
+    register(Browser(pw_app), NEW, password="ngan")
+    assert repo.get_user(NEW) is None
+    register(Browser(pw_app), NEW, password="matkhau-123", confirm="matkhau-456")
+    assert repo.get_user(NEW) is None
+    register(Browser(pw_app), NEW)
+    original = repo.get_user(NEW)["password_hash"]
+    register(Browser(pw_app), NEW, password="mat-khau-khac")  # không ghi đè tài khoản đã có
+    assert repo.get_user(NEW)["password_hash"] == original
+
+
+def test_employee_cannot_approve(pw_app):
+    repo = pw_app.extensions["svc"].repo
+    register(Browser(pw_app), BOSS)
+    register(Browser(pw_app), NEW)
+    admin = Browser(pw_app)
+    pw_login(admin, BOSS)
+    admin.post("/admin/users", {"email": NEW, "name": "Người Mới", "role": "employee",
+                                "department": "Kỹ thuật", "action": "approve"})
+    register(Browser(pw_app), "khac@congty.vn")
+    staff = Browser(pw_app)
+    pw_login(staff, NEW)
+    response = staff.post("/admin/users", {"email": "khac@congty.vn", "role": "admin",
+                                           "department": "Kỹ thuật", "action": "approve"})
+    assert response.status_code == 403
+    assert repo.get_user("khac@congty.vn")["status"] == "pending"
+
+
+def test_register_page_is_closed_outside_password_mode(app):
+    assert app.test_client().get("/register").status_code == 404

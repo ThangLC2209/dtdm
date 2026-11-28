@@ -2,12 +2,58 @@
 {% block title %}Người dùng · Chứng từ số{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Người dùng và vai trò</h1></div>
+
+{% if password_mode %}
+<section class="card {% if pending %}card-action{% endif %}">
+  <h2>Đăng ký chờ duyệt{% if pending %} ({{ pending|length }}){% endif %}</h2>
+  {% if pending %}
+  <p class="muted">Chọn vai trò và bộ phận rồi bấm Duyệt để cấp quyền. Người dùng đăng nhập được ngay sau khi duyệt.</p>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Email</th><th>Họ tên</th><th>Đăng ký lúc</th><th>Vai trò</th><th>Bộ phận</th><th></th></tr></thead>
+    <tbody>
+    {% for u in pending %}
+      <tr>
+        <td>{{ u.email }}</td>
+        <td>{{ u.name }}</td>
+        <td>{% if u.registered_at %}{{ u.registered_at|vntime }}{% endif %}</td>
+        <td>
+          <select name="role" form="pending-{{ loop.index }}" aria-label="Vai trò cấp cho {{ u.email }}">
+            {% for key, label in ROLES.items() %}<option value="{{ key }}" {% if key == u.role %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </td>
+        <td>
+          <select name="department" form="pending-{{ loop.index }}" aria-label="Bộ phận của {{ u.email }}">
+            {% for d in DEPARTMENTS %}<option {% if d == u.department %}selected{% endif %}>{{ d }}</option>{% endfor %}
+          </select>
+        </td>
+        <td class="row-actions">
+          <form id="pending-{{ loop.index }}" method="post" action="{{ url_for('main.users') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="email" value="{{ u.email }}">
+            <input type="hidden" name="name" value="{{ u.name }}">
+            <button class="btn btn-primary" type="submit" name="action" value="approve">Duyệt</button>
+            <button class="btn btn-danger" type="submit" name="action" value="lock">Từ chối</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">Không có đăng ký nào đang chờ.</p>
+  {% endif %}
+</section>
+{% endif %}
+
 <section class="card">
   <div class="table-wrap">
   <table class="table">
-    <thead><tr><th>Email</th><th>Họ tên</th><th>Vai trò</th><th>Bộ phận</th><th></th></tr></thead>
+    <thead><tr><th>Email</th><th>Họ tên</th><th>Vai trò</th><th>Bộ phận</th>{% if password_mode %}<th>Trạng thái</th>{% endif %}<th></th></tr></thead>
     <tbody>
     {% for u in users %}
+      {% set locked = u.status == 'rejected' %}
       <tr>
         <td>{{ u.email }}</td>
         <td>{{ u.name }}</td>
@@ -21,12 +67,20 @@
             {% for d in DEPARTMENTS %}<option {% if d == u.department %}selected{% endif %}>{{ d }}</option>{% endfor %}
           </select>
         </td>
-        <td>
+        {% if password_mode %}<td>{{ ACCOUNT_STATUS.get(u.status or 'active') }}{% if not u.password_hash %} <small class="muted">(chưa có mật khẩu)</small>{% endif %}</td>{% endif %}
+        <td class="row-actions">
           <form id="user-{{ loop.index }}" method="post" action="{{ url_for('main.users') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="email" value="{{ u.email }}">
             <input type="hidden" name="name" value="{{ u.name }}">
-            <button class="btn" type="submit">Lưu</button>
+            <button class="btn" type="submit" name="action" value="save">Lưu</button>
+            {% if password_mode and u.email != user.email %}
+              {% if locked %}
+              <button class="btn" type="submit" name="action" value="unlock">Mở khóa</button>
+              {% else %}
+              <button class="btn btn-danger" type="submit" name="action" value="lock">Khóa</button>
+              {% endif %}
+            {% endif %}
           </form>
         </td>
       </tr>
@@ -38,6 +92,7 @@
 
 <section class="card narrow">
   <h2>Thêm người dùng</h2>
+  {% if password_mode %}<p class="hint">Ở chế độ mật khẩu, nhân viên nên tự đăng ký tại trang Đăng ký để đặt mật khẩu. Người dùng thêm ở đây chưa có mật khẩu nên chưa đăng nhập được.</p>{% endif %}
   <form class="form" method="post" action="{{ url_for('main.users') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="row">

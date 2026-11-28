@@ -14,6 +14,20 @@
     </a>
     <small class="login-note">Tài khoản mới được cấp quyền nhân viên mặc định. Quản trị viên sẽ phân quyền sau khi đăng nhập.</small>
   </div>
+  {% elif password_mode %}
+  <div class="login-panel">
+    <span class="brand-mark login-mark">CT</span>
+    <p class="eyebrow">HỆ THỐNG QUẢN LÝ CHỨNG TỪ</p>
+    <h1>Đăng nhập</h1>
+    <p class="muted">Dùng email và mật khẩu đã đăng ký. Tài khoản mới cần quản trị viên duyệt trước khi sử dụng.</p>
+    <form class="form login-form" method="post" action="{{ url_for('main.login') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Email <input type="email" name="email" value="{{ email }}" autocomplete="username" required autofocus></label>
+      <label>Mật khẩu <input type="password" name="password" autocomplete="current-password" required></label>
+      <button class="btn btn-primary login-submit" type="submit">Đăng nhập</button>
+    </form>
+    <small class="login-note">Chưa có tài khoản? <a href="{{ url_for('main.register') }}">Đăng ký tài khoản nhân viên</a></small>
+  </div>
   {% else %}
   <h1>Chọn tài khoản để trình diễn</h1>
   <p class="muted">Chế độ demo chỉ dùng khi chạy thử trên máy cá nhân. Khi triển khai thật, hãy cấu hình đăng nhập Microsoft Entra ID.</p>

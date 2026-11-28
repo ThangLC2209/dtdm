@@ -246,3 +246,10 @@ textarea { resize: vertical; }
   .facts { grid-template-columns: 1fr; gap: 2px; }
   .facts dd { margin-bottom: 8px; }
 }
+
+/* Đăng nhập bằng mật khẩu, đăng ký và duyệt tài khoản */
+input[type=password] { width: 100%; padding: 9px 11px; border: 1px solid #c9d4d0; border-radius: 8px; background: #fff; color: var(--ink); font: inherit; }
+input[type=password]:focus-visible { outline: 3px solid var(--brand-tint); outline-offset: 1px; border-color: var(--brand); }
+.login-form { text-align: left; margin-top: 4px; }
+.login-submit { min-height: 44px; width: 100%; }
+.row-actions form { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
